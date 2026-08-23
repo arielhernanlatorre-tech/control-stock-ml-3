@@ -1,0 +1,53 @@
+sincronizador
+url = f"https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id=7583533188684908&redirect_uri=https://google.com"
+
+
+obtener token
+url = "https://api.mercadolibre.com/oauth/token"
+
+ RESUMEN DE PROGRESO - CONTROL DE STOCK MERCADO LIBRE
+
+1. Estado actual: El script local 'sincronizador.py' ya funciona al 100%. 
+   Logramos actualizar el stock del "SECADOR-PELO" en las 3 cuentas en simultáneo:
+   - Cuenta A: MLA3726719130 (Éxito )
+   - Cuenta B: MLA372760586  (Éxito  - Corregido tras limpiar sesión)
+   - Cuenta C: MLA3648776610 (Éxito )
+
+2. Próximo objetivo: Automatizar la sincronización inversa (si hay una venta en una cuenta, restar en las otras).
+
+3. Arquitectura elegida: Opción A (Serverless en Vercel + Inventario en Google Sheets).
+   - Ventaja: 100% gratis, corre 24/7 en la nube, control desde el celular y no requiere mantener tu PC encendida.
+
+4. Tarea pendiente para mañana:
+   - Ya estructuramos la nueva planilla de Google Sheets con las columnas: sku, stock, id_cuenta_a, id_cuenta_b, id_cuenta_c.
+   - Siguiente paso: Crear la cuenta gratuita en Vercel y conectar el script de la nube a Google Sheets.
+
+
+
+
+
+Tu GOOGLE_SPREADSHEET_ID es: 1Y_RziiD0CHJ-qlKzTwChj5a1XGX8yZPiQgXvyIXjL8M
+
+
+
+sincronizador-vercel@ordinal-verbena-454922-d9.iam.gserviceaccount.com
+
+
+
+https://control-stock-ml-3.vercel.app/api/webhook
+
+
+
+
+esumen del Proyecto: Sincronizador Multiplataforma en la NubeEstamos creando un Sincronizador Inverso Automático para tus tres cuentas de Mercado Libre. Su función principal es que, en cuanto se concrete una venta en cualquiera de las cuentas, el sistema reste esa unidad en la base de datos y replique el stock real en las otras dos de forma inmediata y 24/7. ¿Por dónde vamos? (Lo que ya dejamos listo) Base de Datos Central (Google Sheets): Creamos la planilla InventarioML con las pestañas Stock (para enlazar los códigos MLA) y Tokens (para autorizar los accesos). Ya está vinculada y con permisos de editor dados a Google Cloud. Servidor en la Nube (Vercel): Creamos tu cuenta gratuita y subimos con éxito el script definitivo (api/index.py). El servidor está encendido y en estado Ready (en funcionamiento). Seguridad Blindada: Ya cargamos dentro de Vercel las 3 Variables de Entorno secretas (GOOGLE_SPREADSHEET_ID, ML_CLIENT_ID y ML_CLIENT_SECRET). Tu sistema ya puede hablar de forma segura con Google y Mercado Libre. Tu URL de Enlace Única (Webhook): Ya la generamos y es esta:https://vercel.app ¿Cómo seguimos? (El próximo paso)El siguiente paso es conectar el cable final para que Mercado Libre empiece a avisarle a tu servidor de Vercel cada vez que haya un cambio:Entraremos al portal de Mercado Libre Developers (://mercadolibre.com).Buscaremos tu aplicación y pegaremos tu URL de Webhook en la sección de notificaciones.Activaremos el casillero de items para que quede escuchando las ventas.Haremos una prueba real modificando el stock para ver cómo Google Sheets se actualiza solo y acomoda las tres cuentas en simultáneo.
+
+
+
+https://control-stock-ml-3.vercel.app/api
+
+
+
+
+
+
+
