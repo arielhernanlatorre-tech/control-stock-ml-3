@@ -3,6 +3,8 @@ import json
 from http.server import BaseHTTPRequestHandler
 import requests
 import gspread
+from flask import Flask, request, jsonify 
+app = Flask(__name__)
 from google.oauth2.service_account import Credentials
 
 def inicializar_google_sheets():
@@ -148,15 +150,12 @@ class handler(BaseHTTPRequestHandler):
                                 actualizar_stock_ml(id_b, stock_real, tokens_finales["cuenta_b"]['access_token'])
                             if cuenta_origen != "cuenta_c":
                                 actualizar_stock_ml(id_c, stock_real, tokens_finales["cuenta_c"]['access_token'])
-               def do_HEAD(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-
-    def do_POST(self):
-
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
+        except Exception as e:
             self.send_response(500)
             self.end_headers()
             self.wfile.write(str(e).encode('utf-8'))
-
-
