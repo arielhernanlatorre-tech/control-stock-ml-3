@@ -125,24 +125,38 @@ def catch_all(path):
                     if resp_item.status_code == 200:
                         stock_real = resp_item.json().get("available_quantity")
                         
-                        # 1. Actualizar Google Sheets
+                        # 1. Actualizamos el Google Sheets en tiempo real
                         hoja_stock.update_cell(fila_num, 2, stock_real)
                         
-                        # 2. Refrescar tokens espejos
-                        tokens_actualizados = obtener_tokens(hoja_tokens)
-                        for c_nombre in ["cuenta_a", "cuenta_b", "cuenta_c"]:
-                            if c_nombre != cuenta_origen:
-                                refrescar_token_cuenta(hoja_tokens, c_nombre, tokens_actualizados[c_nombre]['refresh_token'])
+                        # 2. Intentamos refrescar los tokens espejos de forma segura
+                        try:
+                            tokens_actualizados = obtener_tokens(hoja_tokens)
+                            for c_nombre in ["cuenta_a", "cuenta_b", "cuenta_c"]:
+                                if c_nombre != cuenta_origen:
+                                    refrescar_token_cuenta(hoja_tokens, c_nombre, tokens_actualizados[c_nombre]['refresh_token'])
+                        except Exception as e:
+                            print(f"⚠️ No se pudieron refrescar los tokens espejo: {e}")
                         
                         tokens_finales = obtener_tokens(hoja_tokens)
                         
-                        # 3. Sincronizar stock en Mercado Libre
+                        # 3. Replicamos el stock de forma aislada (si una falla, las demás siguen)
                         if cuenta_origen != "cuenta_a":
-                            actualizar_stock_ml(id_a, stock_real, tokens_finales["cuenta_a"]['access_token'])
+                            try:
+                                actualizar_stock_ml(id_a, stock_real, tokens_finales["cuenta_a"]['access_token'])
+                            except Exception:
+                                print("⚠️ Error al actualizar Cuenta A")
+                                
                         if cuenta_origen != "cuenta_b":
-                            actualizar_stock_ml(id_b, stock_real, tokens_finales["cuenta_b"]['access_token'])
+                            try:
+                                actualizar_stock_ml(id_b, stock_real, tokens_finales["cuenta_b"]['access_token'])
+                            except Exception:
+                                print("⚠️ Error al actualizar Cuenta B")
+                                
                         if cuenta_origen != "cuenta_c":
-                            actualizar_stock_ml(id_c, stock_real, tokens_finales["cuenta_c"]['access_token'])
+                            try:
+                                actualizar_stock_ml(id_c, stock_real, tokens_finales["cuenta_c"]['access_token'])
+                            except Exception:
+                                print("⚠️ Error al actualizar Cuenta C")
                             
         return jsonify({"status": "ok"}), 200
 
