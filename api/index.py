@@ -163,3 +163,4 @@ def catch_all(path):
     except Exception as e:
         print(f"❌ Error interno: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
