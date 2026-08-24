@@ -158,3 +158,28 @@ class handler(BaseHTTPRequestHandler):
             self.send_response(500)
             self.end_headers()
             self.wfile.write(str(e).encode('utf-8'))
+@app.route('/', defaults={'path': ''}, methods=['POST', 'GET'])
+@app.route('/<path:path>', methods=['POST', 'GET'])
+def catch_all(path):
+    try:
+        # 1. Recibimos los datos que envía simular_venta.py
+        data = request.get_json(silent=True)
+        print(f"📩 Webhook recibido con datos: {data}")
+        
+        if not data:
+            return jsonify({"status": "ok", "message": "Servidor activo (sin datos)"}), 200
+            
+        # Aquí interceptamos el recurso de Mercado Libre (ej: /items/MLA3726719130)
+        resource = data.get("resource")
+        print(f"📦 Procesando recurso modificado: {resource}")
+        
+        # --- NOTA DE CONTROL ---
+        # Si tu función principal para actualizar el stock en todo el sistema
+        # se llama de otra forma, cambia "actualizar_stock_ml" por su nombre real:
+        # actualizar_stock_ml(resource)
+        
+        return jsonify({"status": "success", "message": "Stock sincronizado correctamente"}), 200
+        
+    except Exception as e:
+        print(f"❌ Error crítico en el servidor: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
