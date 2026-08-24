@@ -9,8 +9,8 @@ app = Flask(__name__)
 
 def inicializar_google_sheets():
     alcance = [
-        'https://googleapis.com',
-        'https://googleapis.com'
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
     ]
     
     if "CREDENTIALS_JSON" in os.environ:
@@ -43,7 +43,7 @@ def obtener_tokens(hoja_tokens=None):
 def actualizar_stock_ml(item_id, nuevo_stock, access_token):
     if not item_id or str(item_id).strip().upper() == "N/A" or not str(item_id).startswith("MLA"):
         return
-    url = f"https://mercadolibre.com{item_id}"
+    url = f"https://api.mercadolibre.com/items/{item_id}"
     payload = {"available_quantity": int(nuevo_stock)}
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -92,7 +92,7 @@ def catch_all(path):
                     tokens_finales = obtener_tokens()
                     token_actual = tokens_finales[cuenta_origen]['access_token']
                     
-                    url_item = f"https://mercadolibre.com{item_id}"
+                    url_item = f"https://api.mercadolibre.com/items/{item_id}"
                     headers = {"Authorization": f"Bearer {token_actual}"}
                     resp_item = requests.get(url_item, headers=headers)
                     
