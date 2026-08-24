@@ -3,17 +3,17 @@
     "client_secret": "wDgga4wUCLFMkr7d2XbEGOkmoSZ5KwaV",
     "cuenta_a": {
         "nombre": "MiCuentaUno",
-        "access_token": "APP_USR-7583533188684908-082409-8c0c0eb20bfb5cd8b710ba092447d472-79917839",
-        "refresh_token": "TG-6a8c4a782e35330001a9cdb9-79917839"
+        "access_token": "APP_USR-7583533188684908-082415-a5042c7f4fb5d18c1fa9ac6faceb0ea1-79917839",
+        "refresh_token": "TG-6a8c98f12e35330001afecd9-79917839"
     },
     "cuenta_b": {
         "nombre": "MiCuentaDos",
-        "access_token": "APP_USR-7583533188684908-082409-043d838130e166f9f6b0128007d7bc78-1088743860",
-        "refresh_token": "TG-6a8c4af3e97a96000153e2a5-1088743860"
+        "access_token": "APP_USR-7583533188684908-082415-5b8884aa9848f588985ec160d4a34a69-1088743860",
+        "refresh_token": "TG-6a8c994cda5ad3000192c033-1088743860"
     },
     "cuenta_c": {
         "nombre": "MiCuentaTres",
-        "access_token": "APP_USR-7583533188684908-082409-b1aa1844443dd6e9c087129d814117f6-771862815",
-        "refresh_token": "TG-6a8c4b6470f10b0001c7078b-771862815"
+        "access_token": "APP_USR-7583533188684908-082415-35c04b672fc0ea5856b1f453fa59e410-771862815",
+        "refresh_token": "TG-6a8c99955a6cc400016c8abf-771862815"
     }
 }
