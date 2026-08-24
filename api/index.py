@@ -2,184 +2,186 @@ import os
 import json
 import requests
 import gspread
-from flask import Flask, request, jsonify 
-app = Flask(__name__)
+from flask import Flask, request, jsonify
 from google.oauth2.service_account import Credentials
 
-def inicializar_google_sheets():
-    # CORREGIDO: URLs completas y correctas para la API de Google (Línea 11)
-    alcance = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
-    ]
+app = Flask(__name__)
+
+# Configuración de Google Sheets desde las Variables de Entorno de Vercel
+def conectar_google_sheets():
+    credenciales_json = json.loads(os.environ.get("GOOGLE_CREDENTIALS"))
+    spreadsheet_id = os.environ.get("GOOGLE_SPREADSHEET_ID")
     
-    # Si la variable de entorno está en Vercel, procesamos el JSON directamente desde texto
-    if "CREDENTIALS_JSON" in os.environ:
-        info_credenciales = json.loads(os.environ["CREDENTIALS_JSON"])
-        credenciales = Credentials.from_service_account_info(info_credenciales, scopes=alcance)
-    else:
-        # En tu computadora local seguirá buscando el archivo físico tradicional
-        ruta_credenciales = os.path.join(os.getcwd(), 'credentials.json')
-        credenciales = Credentials.from_service_account_file(ruta_credenciales, scopes=alcance)
-        
+    alcance = ["https://googleapis.com"]
+    credenciales = Credentials.from_service_account_info(credenciales_json, scopes=alcance)
     cliente = gspread.authorize(credenciales)
-    # Abre la planilla usando la variable de entorno configurada en Vercel
-    return cliente.open_by_key(os.environ.get("GOOGLE_SPREADSHEET_ID"))
+    
+    return cliente.open_by_key(spreadsheet_id)
 
-def obtener_tokens(hoja_tokens):
-    datos = hoja_tokens.get_all_records()
-    tokens = {}
-    for fila in datos:
-        tokens[fila['cuenta']] = {
-            'access_token': fila['access_token'],
-            'refresh_token': fila['refresh_token']
-        }
-    return tokens
+def obtener_tokens_desde_sheets(nombre_cuenta):
+    """Lee los tokens directamente desde la pestaña 'Tokens' de Google Sheets."""
+    try:
+        doc = conectar_google_sheets()
+        hoja_tokens = doc.worksheet("Tokens")
+        datos = hoja_tokens.get_all_records()
+        
+        for fila in datos:
+            if str(fila.get("cuenta")).strip().lower() == nombre_cuenta.strip().lower():
+                return {
+                    "access_token": fila.get("access_token"),
+                    "refresh_token": fila.get("refresh_token")
+                }
+        return None
+    except Exception as e:
+        print(f"❌ Error al leer tokens de Sheets: {e}")
+        return None
 
-def guardar_tokens_en_sheet(hoja_tokens, cuenta, access, refresh):
-    celda_cuenta = hoja_tokens.find(cuenta)
-    if celda_cuenta:
-        fila = celda_cuenta.row
-        hoja_tokens.update_cell(fila, 2, access)
-        hoja_tokens.update_cell(fila, 3, refresh)
+def actualizar_tokens_en_sheets(nombre_cuenta, nuevo_access, nuevo_refresh):
+    """Guarda los nuevos tokens en Google Sheets cuando Mercado Libre los renueva."""
+    try:
+        doc = conectar_google_sheets()
+        hoja_tokens = doc.worksheet("Tokens")
+        datos = hoja_tokens.get_all_records()
+        
+        for idx, fila in enumerate(datos, start=2): # fila 1 son encabezados
+            if str(fila.get("cuenta")).strip().lower() == nombre_cuenta.strip().lower():
+                hoja_tokens.update_cell(idx, 2, nuevo_access) # Columna B
+                hoja_tokens.update_cell(idx, 3, nuevo_refresh) # Columna C
+                print(f"💾 Tokens actualizados en Sheets para {nombre_cuenta}")
+                return True
+        return False
+    except Exception as e:
+        print(f"❌ Error al guardar tokens en Sheets: {e}")
+        return False
 
-def refrescar_token_cuenta(hoja_tokens, cuenta, refresh_token):
-    # CORREGIDO: Ruta oficial para renovar credenciales en Mercado Libre
-    url = "https://api.mercadolibre.com/oauth/token"
+def refrescar_token_ml(nombre_cuenta, refresh_token):
+    """Pide un nuevo access_token a Mercado Libre usando el refresh_token."""
+    url = "https://mercadolibre.com"
     payload = {
         "grant_type": "refresh_token",
         "client_id": os.environ.get("ML_CLIENT_ID"),
         "client_secret": os.environ.get("ML_CLIENT_SECRET"),
         "refresh_token": refresh_token
     }
-    headers = {"accept": "application/json", "content-type": "application/x-www-form-urlencoded"}
+    headers = {"content-type": "application/x-www-form-urlencoded"}
     
-    resp = requests.post(url, data=payload, headers=headers)
-    if resp.status_code == 200:
-        datos = resp.json()
+    respuesta = requests.post(url, data=payload, headers=headers)
+    if respuesta.status_code == 200:
+        datos = respuesta.json()
         nuevo_access = datos.get("access_token")
         nuevo_refresh = datos.get("refresh_token")
-        guardar_tokens_en_sheet(hoja_tokens, cuenta, nuevo_access, nuevo_refresh)
+        # Los guardamos en el Excel para la próxima ejecución
+        actualizar_tokens_en_sheets(nombre_cuenta, nuevo_access, nuevo_refresh)
         return nuevo_access
-    return None
+    else:
+        print(f"❌ Error al refrescar token en ML: {respuesta.text}")
+        return None
 
-def actualizar_stock_ml(item_id, nuevo_stock, access_token):
-    if not item_id or str(item_id).strip().upper() == "N/A" or not str(item_id).startswith("MLA"):
-        return
-    # CORREGIDO: Endpoint correcto de la API para actualizar items
-    url = f"https://api.mercadolibre.com/items/{item_id}"
-    payload = {"available_quantity": int(nuevo_stock)}
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
-    }
-    requests.put(url, json=payload, headers=headers)
-
-class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        longitud_contenido = int(self.headers['Content-Length'])
-        datos_post = self.rfile.read(longitud_contenido)
+def procesar_cambio_stock(resource_url):
+    """Identifica el producto vendido, calcula el nuevo stock y lo impacta en las 3 cuentas."""
+    try:
+        # Extraemos el ID de item de la URL (ej: /items/MLA3726719130 -> MLA3726719130)
+        item_id = resource_url.split("/")[-1]
         
-        try:
-            notificacion = json.loads(datos_post.decode('utf-8'))
-            # Verificamos que sea una notificación sobre un artículo/item
-            if notificacion.get("topic") == "items":
-                recurso = notificacion.get("resource", "")
-                item_id = recurso.split("/")[-1] # Extrae el MLAXXXXXXXXX
+        doc = conectar_google_sheets()
+        hoja_stock = doc.worksheet("Stock")
+        productos = hoja_stock.get_all_records()
+        
+        fila_producto = None
+        nro_fila_excel = None
+        cuenta_origen = None
+        
+        # 1. Buscamos a qué fila del Excel pertenece el MLA vendido
+        for idx, prod in enumerate(productos, start=2):
+            if str(prod.get("id_cuenta_a")) == item_id:
+                fila_producto = prod
+                nro_fila_excel = idx
+                cuenta_origen = "cuenta_a"
+                break
+            elif str(prod.get("id_cuenta_b")) == item_id:
+                fila_producto = prod
+                nro_fila_excel = idx
+                cuenta_origen = "cuenta_b"
+                break
+            elif str(prod.get("id_cuenta_c")) == item_id:
+                fila_producto = prod
+                nro_fila_excel = idx
+                cuenta_origen = "cuenta_c"
+                break
                 
-                doc = inicializar_google_sheets()
-                hoja_stock = doc.worksheet("Stock")
-                hoja_tokens = doc.worksheet("Tokens")
-                
-                # Buscamos el item en las columnas de las 3 cuentas
-                celda = hoja_stock.find(item_id)
-                if celda:
-                    fila_num = celda.row
-                    fila_datos = hoja_stock.row_values(fila_num)
-                    
-                    # Estructura: sku=col1, stock=col2, id_a=col3, id_b=col4, id_c=col5
-                    sku = fila_datos[0]
-                    id_a = fila_datos[2] if len(fila_datos) > 2 else ""
-                    id_b = fila_datos[3] if len(fila_datos) > 3 else ""
-                    id_c = fila_datos[4] if len(fila_datos) > 4 else ""
-                    
-                    # Mapeo para identificar en qué cuenta se vendió
-                    mapeo_cuentas = {"cuenta_a": id_a, "cuenta_b": id_b, "cuenta_c": id_c}
-                    cuenta_origen = None
-                    for k, v in mapeo_cuentas.items():
-                        if v == item_id:
-                            cuenta_origen = k
-                            break
-                    
-                    if cuenta_origen:
-                        tokens = obtener_tokens(hoja_tokens)
-                        token_actual = tokens[cuenta_origen]['access_token']
-                        
-                        # CORREGIDO: Endpoint correcto para obtener el detalle del item
-                        url_item = f"https://api.mercadolibre.com/items/{item_id}"
-                        headers = {"Authorization": f"Bearer {token_actual}"}
-                        resp_item = requests.get(url_item, headers=headers)
-                        
-                        # Si el token expiró, lo renovamos e intentamos de nuevo
-                        if resp_item.status_code == 401:
-                            nuevo_token = refrescar_token_cuenta(hoja_tokens, cuenta_origen, tokens[cuenta_origen]['refresh_token'])
-                            if nuevo_token:
-                                headers = {"Authorization": f"Bearer {nuevo_token}"}
-                                resp_item = requests.get(url_item, headers=headers)
-                        
-                        if resp_item.status_code == 200:
-                            stock_real = resp_item.json().get("available_quantity")
-                            
-                            # 1. Actualizamos la celda de la hoja Stock en Google Sheets
-                            hoja_stock.update_cell(fila_num, 2, stock_real)
-                            
-                            # 2. Refrescamos tokens de las OTRAS cuentas por seguridad antes de sincronizar
-                            tokens_actualizados = obtener_tokens(hoja_tokens)
-                            for c_nombre in ["cuenta_a", "cuenta_b", "cuenta_c"]:
-                                if c_nombre != cuenta_origen:
-                                    refrescar_token_cuenta(hoja_tokens, c_nombre, tokens_actualizados[c_nombre]['refresh_token'])
-                            
-                            # Volvemos a leer tokens frescos post-renovación
-                            tokens_finales = obtener_tokens(hoja_tokens)
-                            
-                            # 3. Replicamos el stock en las cuentas restantes
-                            if cuenta_origen != "cuenta_a":
-                                actualizar_stock_ml(id_a, stock_real, tokens_finales["cuenta_a"]['access_token'])
-                            if cuenta_origen != "cuenta_b":
-                                actualizar_stock_ml(id_b, stock_real, tokens_finales["cuenta_b"]['access_token'])
-                            if cuenta_origen != "cuenta_c":
-                                actualizar_stock_ml(id_c, stock_real, tokens_finales["cuenta_c"]['access_token'])
+        if not fila_producto:
+            print(f"⚠️ El item {item_id} no está registrado en la pestaña Stock.")
+            return
             
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
-        except Exception as e:
-            self.send_response(500)
-            self.end_headers()
-            self.wfile.write(str(e).encode('utf-8'))
+        # 2. Obtenemos el stock actual de Mercado Libre de la cuenta que vendió
+        tokens_origen = obtener_tokens_desde_sheets(cuenta_origen)
+        if not tokens_origen: return
+        
+        url_ml = f"https://mercadolibre.com{item_id}"
+        headers = {"Authorization": f"Bearer {tokens_origen['access_token']}"}
+        res_item = requests.get(url_ml, headers=headers)
+        
+        # Si el token expiró (401), lo refrescamos e intentamos de nuevo
+        if res_item.status_code == 401:
+            nuevo_access = refrescar_token_ml(cuenta_origen, tokens_origen["refresh_token"])
+            if nuevo_access:
+                headers = {"Authorization": f"Bearer {nuevo_access}"}
+                res_item = requests.get(url_ml, headers=headers)
+                
+        if res_item.status_code != 200:
+            print("❌ Error al consultar stock en Mercado Libre.")
+            return
+            
+        nuevo_stock_real = res_item.json().get("available_quantity", 0)
+        print(f"📉 Venta detectada. Nuevo stock real en Mercado Libre: {nuevo_stock_real}")
+        
+        # 3. Actualizamos la celda de Stock en Google Sheets (Columna B)
+        hoja_stock.update_cell(nro_fila_excel, 2, nuevo_stock_real)
+        
+        # 4. Sincronizamos el nuevo stock en las otras dos cuentas socias
+        cuentas_destino = ["cuenta_a", "cuenta_b", "cuenta_c"]
+        cuentas_destino.remove(cuenta_origen)
+        
+        for cuenta in cuentas_destino:
+            mla_destino = fila_producto.get(f"id_{cuenta}")
+            if mla_destino and str(mla_destino).strip():
+                tokens_dest = obtener_tokens_desde_sheets(cuenta)
+                if tokens_dest:
+                    url_update = f"https://mercadolibre.com{mla_destino}"
+                    headers_dest = {"Authorization": f"Bearer {tokens_dest['access_token']}"}
+                    payload_dest = {"available_quantity": nuevo_stock_real}
+                    
+                    res_up = requests.put(url_update, json=payload_dest, headers=headers_dest)
+                    if res_up.status_code == 401: # Si expiró, se refresca
+                        act_access = refrescar_token_ml(cuenta, tokens_dest["refresh_token"])
+                        if act_access:
+                            headers_dest = {"Authorization": f"Bearer {act_access}"}
+                            res_up = requests.put(url_update, json=payload_dest, headers=headers_dest)
+                            
+                    if res_up.status_code == 200:
+                        print(f"✅ Stock sincronizado en {cuenta} para el item {mla_destino}")
+                    else:
+                        print(f"❌ Falló sincronización en {cuenta}: {res_up.text}")
+                        
+    except Exception as e:
+        print(f"❌ Error en la lógica de actualización: {e}")
+
+# Webhook receptor de Vercel
 @app.route('/', defaults={'path': ''}, methods=['POST', 'GET'])
 @app.route('/<path:path>', methods=['POST', 'GET'])
 def catch_all(path):
     try:
-        # 1. Recibimos los datos que envía simular_venta.py
         data = request.get_json(silent=True)
-        print(f"📩 Webhook recibido con datos: {data}")
-        
         if not data:
-            return jsonify({"status": "ok", "message": "Servidor activo (sin datos)"}), 200
+            return jsonify({"status": "ok", "message": "Servidor en línea (Esperando Webhook)"}), 200
             
-        # Aquí interceptamos el recurso de Mercado Libre (ej: /items/MLA3726719130)
         resource = data.get("resource")
-        print(f"📦 Procesando recurso modificado: {resource}")
-        
-        # --- NOTA DE CONTROL ---
-        # Si tu función principal para actualizar el stock en todo el sistema
-        # se llama de otra forma, cambia "actualizar_stock_ml" por su nombre real:
-        # actualizar_stock_ml(resource)
-        
-        return jsonify({"status": "success", "message": "Stock sincronizado correctamente"}), 200
-        
+        if resource:
+            print(f"🚀 Notificación recibida para el recurso: {resource}")
+            # Ejecutamos la sincronización en segundo plano usando los datos en la nube
+            procesar_cambio_stock(resource)
+            return jsonify({"status": "success", "message": "Sincronización procesada"}), 200
+            
+        return jsonify({"status": "ok", "message": "JSON recibido sin recurso válido"}), 200
     except Exception as e:
-        print(f"❌ Error crítico en el servidor: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
