@@ -23,22 +23,22 @@ def inicializar_google_sheets():
     cliente = gspread.authorize(credenciales)
     return cliente.open_by_key(os.environ.get("GOOGLE_SPREADSHEET_ID"))
 
-def obtener_tokens(hoja_tokens):
-    datos = hoja_tokens.get_all_records()
-    tokens = {}
-    for fila in datos:
-        tokens[fila['cuenta']] = {
-            'access_token': fila['access_token'],
-            'refresh_token': fila['refresh_token']
+def obtener_tokens(hoja_tokens=None):
+    """Lee los tokens directamente desde las Variables de Entorno de Vercel."""
+    return {
+        "cuenta_a": {
+            "access_token": os.environ.get("TOKEN_CUENTA_A", ""),
+            "refresh_token": os.environ.get("REFRESH_CUENTA_A", "")
+        },
+        "cuenta_b": {
+            "access_token": os.environ.get("TOKEN_CUENTA_B", ""),
+            "refresh_token": os.environ.get("REFRESH_CUENTA_B", "")
+        },
+        "cuenta_c": {
+            "access_token": os.environ.get("TOKEN_CUENTA_C", ""),
+            "refresh_token": os.environ.get("REFRESH_CUENTA_C", "")
         }
-    return tokens
-
-def guardar_tokens_en_sheet(hoja_tokens, cuenta, access, refresh):
-    celda_cuenta = hoja_tokens.find(cuenta)
-    if celda_cuenta:
-        fila = celda_cuenta.row
-        hoja_tokens.update_cell(fila, 2, access)
-        hoja_tokens.update_cell(fila, 3, refresh)
+    }
 
 def refrescar_token_cuenta(hoja_tokens, cuenta, refresh_token):
     url = "https://api.mercadolibre.com/oauth/token"
@@ -54,8 +54,7 @@ def refrescar_token_cuenta(hoja_tokens, cuenta, refresh_token):
     if resp.status_code == 200:
         datos = resp.json()
         nuevo_access = datos.get("access_token")
-        nuevo_refresh = datos.get("refresh_token")
-        guardar_tokens_en_sheet(hoja_tokens, cuenta, nuevo_access, nuevo_refresh)
+        # El token se refresca en memoria para este proceso actual
         return nuevo_access
     return None
 
@@ -78,7 +77,7 @@ def catch_all(path):
 
     try:
         notificacion = request.get_json(silent=True)
-        if not notificacion:
+        if not notification:
             return jsonify({"error": "No se recibieron datos JSON válidos"}), 400
             
         print(f"📩 Webhook recibido: {json.dumps(notificacion)}")
@@ -163,4 +162,3 @@ def catch_all(path):
     except Exception as e:
         print(f"❌ Error interno: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
