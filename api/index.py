@@ -9,8 +9,8 @@ app = Flask(__name__)
 
 def inicializar_google_sheets():
     alcance = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
+        'https://googleapis.com',
+        'https://googleapis.com'
     ]
     
     if "CREDENTIALS_JSON" in os.environ:
@@ -40,28 +40,10 @@ def obtener_tokens(hoja_tokens=None):
         }
     }
 
-def refrescar_token_cuenta(hoja_tokens, cuenta, refresh_token):
-    url = "https://api.mercadolibre.com/oauth/token"
-    payload = {
-        "grant_type": "refresh_token",
-        "client_id": os.environ.get("ML_CLIENT_ID"),
-        "client_secret": os.environ.get("ML_CLIENT_SECRET"),
-        "refresh_token": refresh_token
-    }
-    headers = {"accept": "application/json", "content-type": "application/x-www-form-urlencoded"}
-    
-    resp = requests.post(url, data=payload, headers=headers)
-    if resp.status_code == 200:
-        datos = resp.json()
-        nuevo_access = datos.get("access_token")
-        # El token se refresca en memoria para este proceso actual
-        return nuevo_access
-    return None
-
 def actualizar_stock_ml(item_id, nuevo_stock, access_token):
     if not item_id or str(item_id).strip().upper() == "N/A" or not str(item_id).startswith("MLA"):
         return
-    url = f"https://api.mercadolibre.com/items/{item_id}"
+    url = f"https://mercadolibre.com{item_id}"
     payload = {"available_quantity": int(nuevo_stock)}
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -77,7 +59,7 @@ def catch_all(path):
 
     try:
         notificacion = request.get_json(silent=True)
-        if not notification:
+        if not notificacion:
             return jsonify({"error": "No se recibieron datos JSON válidos"}), 400
             
         print(f"📩 Webhook recibido: {json.dumps(notificacion)}")
@@ -88,7 +70,6 @@ def catch_all(path):
             
             doc = inicializar_google_sheets()
             hoja_stock = doc.worksheet("Stock")
-            hoja_tokens = doc.worksheet("Tokens")
             
             celda = hoja_stock.find(item_id)
             if celda:
@@ -108,54 +89,37 @@ def catch_all(path):
                         break
                 
                 if cuenta_origen:
-                    tokens = obtener_tokens(hoja_tokens)
-                    token_actual = tokens[cuenta_origen]['access_token']
+                    tokens_finales = obtener_tokens()
+                    token_actual = tokens_finales[cuenta_origen]['access_token']
                     
-                    url_item = f"https://api.mercadolibre.com/items/{item_id}"
+                    url_item = f"https://mercadolibre.com{item_id}"
                     headers = {"Authorization": f"Bearer {token_actual}"}
                     resp_item = requests.get(url_item, headers=headers)
-                    
-                    if resp_item.status_code == 401:
-                        nuevo_token = refrescar_token_cuenta(hoja_tokens, cuenta_origen, tokens[cuenta_origen]['refresh_token'])
-                        if nuevo_token:
-                            headers = {"Authorization": f"Bearer {nuevo_token}"}
-                            resp_item = requests.get(url_item, headers=headers)
                     
                     if resp_item.status_code == 200:
                         stock_real = resp_item.json().get("available_quantity")
                         
-                        # 1. Actualizamos el Google Sheets en tiempo real
+                        # 1. Actualizamos el Google Sheets en tiempo real (Pestaña Stock)
                         hoja_stock.update_cell(fila_num, 2, stock_real)
                         
-                        # 2. Intentamos refrescar los tokens espejos de forma segura
-                        try:
-                            tokens_actualizados = obtener_tokens(hoja_tokens)
-                            for c_nombre in ["cuenta_a", "cuenta_b", "cuenta_c"]:
-                                if c_nombre != cuenta_origen:
-                                    refrescar_token_cuenta(hoja_tokens, c_nombre, tokens_actualizados[c_nombre]['refresh_token'])
-                        except Exception as e:
-                            print(f"⚠️ No se pudieron refrescar los tokens espejo: {e}")
-                        
-                        tokens_finales = obtener_tokens(hoja_tokens)
-                        
-                        # 3. Replicamos el stock de forma aislada (si una falla, las demás siguen)
+                        # 2. Replicamos el stock de forma aislada a las cuentas espejo usando Vercel
                         if cuenta_origen != "cuenta_a":
                             try:
                                 actualizar_stock_ml(id_a, stock_real, tokens_finales["cuenta_a"]['access_token'])
-                            except Exception:
-                                print("⚠️ Error al actualizar Cuenta A")
+                            except Exception as e:
+                                print(f"⚠️ Error al actualizar Cuenta A: {e}")
                                 
                         if cuenta_origen != "cuenta_b":
                             try:
                                 actualizar_stock_ml(id_b, stock_real, tokens_finales["cuenta_b"]['access_token'])
-                            except Exception:
-                                print("⚠️ Error al actualizar Cuenta B")
+                            except Exception as e:
+                                print(f"⚠️ Error al actualizar Cuenta B: {e}")
                                 
                         if cuenta_origen != "cuenta_c":
                             try:
                                 actualizar_stock_ml(id_c, stock_real, tokens_finales["cuenta_c"]['access_token'])
-                            except Exception:
-                                print("⚠️ Error al actualizar Cuenta C")
+                            except Exception as e:
+                                print(f"⚠️ Error al actualizar Cuenta C: {e}")
                             
         return jsonify({"status": "ok"}), 200
 
