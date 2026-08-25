@@ -2,47 +2,44 @@ import os
 import json
 import requests
 from flask import Flask, request, jsonify
-# Intentamos importar el cliente oficial de Vercel KV
+# Usamos el cliente oficial de Upstash Redis que no pierde la conexión en Flask
 try:
-    from vercel_kv import KV
-    kv = KV()
+    from upstash_redis import Redis
+    kv = Redis.from_env() # Toma automáticamente las claves de tu pestaña Storage
 except ImportError:
     kv = None
 
 app = Flask(__name__)
 
 def obtener_y_refrescar_token(cuenta_clave):
-    """
-    Busca los tokens en la base de datos Vercel KV.
-    Si el token venció (da 401), lo renueva en la API de ML,
-    lo guarda actualizado en Vercel KV y devuelve el token válido.
-    """
     if not kv:
-        print("❌ Error: La librería vercel_kv no está disponible.")
+        print("❌ Error: El cliente Redis de Upstash no está disponible.")
         return None
 
-    # 1. Intentamos leer los tokens guardados en Vercel KV
+    # Obtenemos los tokens directamente desde la base de datos
     datos_token_str = kv.get(f"tokens:{cuenta_clave}")
     
     if not datos_token_str:
-        print(f"❌ No se encontraron tokens en KV para {cuenta_clave}. Asegúrate de haber hecho la carga inicial.")
+        print(f"❌ No se encontraron tokens en KV para {cuenta_clave}.")
         return None
 
-    token_data = json.loads(datos_token_str) if isinstance(datos_token_str, str) else datos_token_str
+    try:
+        token_data = json.loads(datos_token_str) if isinstance(datos_token_str, str) else datos_token_str
+    except Exception:
+        token_data = datos_token_str
+        
     access_token = token_data.get('access_token')
     refresh_token = token_data.get('refresh_token')
 
-    # 2. Validamos si el token actual sigue vigente con una llamada rápida a ML
-    url_test = "https://api.mercadolibre.com/users/me"
+    url_test = "https://mercadolibre.com"
     headers_test = {"Authorization": f"Bearer {access_token}"}
     resp_test = requests.get(url_test, headers=headers_test)
 
     if resp_test.status_code == 200:
         return access_token
 
-    # 3. Si da 401, el token expiró. Lo renovamos con el refresh_token
     print(f"🔄 Token vencido para [{cuenta_clave}]. Renovando en Mercado Libre...")
-    url_oauth = "https://api.mercadolibre.com/oauth/token"
+    url_oauth = "https://mercadolibre.com"
     payload = {
         "grant_type": "refresh_token",
         "client_id": os.environ.get("ML_CLIENT_ID"),
@@ -57,19 +54,18 @@ def obtener_y_refrescar_token(cuenta_clave):
         nuevo_access = nuevos_datos.get("access_token")
         nuevo_refresh = nuevos_datos.get("refresh_token")
         
-        # 4. Guardamos los nuevos tokens de inmediato en Vercel KV para la próxima ejecución
         estructura_guardado = {"access_token": nuevo_access, "refresh_token": nuevo_refresh}
         kv.set(f"tokens:{cuenta_clave}", json.dumps(estructura_guardado))
-        print(f"✅ Tokens de [{cuenta_clave}] actualizados y guardados con éxito en Vercel KV.")
+        print(f"✅ Tokens de [{cuenta_clave}] actualizados con éxito en Vercel KV.")
         return nuevo_access
     else:
-        print(f"❌ Error crítico al renovar token en la API de ML: {resp_oauth.text}")
+        print(f"❌ Error crítico al renovar token: {resp_oauth.text}")
         return None
 
 def actualizar_stock_ml(item_id, nuevo_stock, access_token):
     if not item_id or str(item_id).strip().upper() == "N/A" or not str(item_id).startswith("MLA"):
         return
-    url = f"https://api.mercadolibre.com/items/{item_id}"
+    url = f"https://mercadolibre.com{item_id}"
     payload = {"available_quantity": int(nuevo_stock)}
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -82,7 +78,7 @@ def actualizar_stock_ml(item_id, nuevo_stock, access_token):
 @app.route('/<path:path>', methods=['POST', 'GET'])
 def catch_all(path):
     if request.method == 'GET':
-        return jsonify({"status": "online", "mensaje": "Servidor activo con Vercel KV. Monitoreando Webhooks."}), 200
+        return jsonify({"status": "online", "mensaje": "Servidor activo. Monitoreando Webhooks con Upstash."}), 200
 
     try:
         notificacion = request.get_json(silent=True)
@@ -98,15 +94,16 @@ def catch_all(path):
             if not kv:
                 return jsonify({"error": "Base de datos KV no inicializada"}), 500
 
-            # Buscamos la relación de este ítem en el mapa de equivalencias guardado en KV
             mapa_productos_str = kv.get("mapa_productos")
             if not mapa_productos_str:
-                print("⚠️ No hay equivalencias de productos cargadas en Vercel KV.")
+                print("⚠️ No hay equivalencias de productos cargadas.")
                 return jsonify({"status": "no_product_map"}), 200
                 
-            mapa_productos = json.loads(mapa_productos_str) if isinstance(mapa_productos_str, str) else mapa_productos_str
+            try:
+                mapa_productos = json.loads(mapa_productos_str) if isinstance(mapa_productos_str, str) else mapa_productos_str
+            except Exception:
+                mapa_productos = mapa_productos_str
             
-            # Buscamos la fila/diccionario que contiene este ID de producto
             producto_encontrado = None
             for prod in mapa_productos:
                 if item_id in [prod.get("id_a"), prod.get("id_b"), prod.get("id_c")]:
@@ -126,29 +123,25 @@ def catch_all(path):
                         break
                 
                 if cuenta_origen:
-                    # Obtenemos el token válido de la cuenta de origen
                     token_actual = obtener_y_refrescar_token(cuenta_origen)
                     if not token_actual:
                         return jsonify({"error": f"No se pudo validar el token de {cuenta_origen}"}), 400
                     
-                    url_item = f"https://api.mercadolibre.com/items/{item_id}"
+                    url_item = f"https://mercadolibre.com{item_id}"
                     headers = {"Authorization": f"Bearer {token_actual}"}
                     resp_item = requests.get(url_item, headers=headers)
                     
                     if resp_item.status_code == 200:
                         stock_real = int(resp_item.json().get("available_quantity", 0))
                         
-                        # Guardamos el último stock procesado en KV para romper bucles infinitos
                         ultimo_stock_guardado = kv.get(f"stock_actual:{id_a}")
                         if ultimo_stock_guardado and int(ultimo_stock_guardado) == stock_real:
-                            print(f"🛑 Webhook ignorado para {item_id}: El stock ya está replicado ({stock_real} u.). Evitando bucle.")
+                            print(f"🛑 Webhook ignorado para {item_id}: Stock ya replicado ({stock_real} u.).")
                             return jsonify({"status": "ignored", "reason": "loop_prevention"}), 200
                             
-                        # Actualizamos el registro de stock en KV
                         kv.set(f"stock_actual:{id_a}", stock_real)
-                        print(f"🚨 ¡Cambio de stock detectado! Origen: {cuenta_origen}. Nuevo Stock Real: {stock_real}")
+                        print(f"🚨 ¡Cambio detectado! Origen: {cuenta_origen}. Stock: {stock_real}")
                         
-                        # Replicamos el stock a las cuentas espejo
                         for cuenta_destino, id_destino in mapeo_cuentas.items():
                             if cuenta_destino != cuenta_origen and id_destino:
                                 token_destino = obtener_y_refrescar_token(cuenta_destino)
