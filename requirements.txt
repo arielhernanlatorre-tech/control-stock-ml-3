@@ -1,4 +1,3 @@
-requests
-gspread
-google-auth
-Flask
+Flask==3.0.3
+requests==2.32.3
+vercel-kv==0.1.3
