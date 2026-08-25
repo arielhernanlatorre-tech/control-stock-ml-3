@@ -31,7 +31,7 @@ def obtener_y_refrescar_token(cuenta_clave):
     access_token = token_data.get('access_token')
     refresh_token = token_data.get('refresh_token')
 
-    url_test = "https://mercadolibre.com"
+    url_test = "https://api.mercadolibre.com/users/me"
     headers_test = {"Authorization": f"Bearer {access_token}"}
     resp_test = requests.get(url_test, headers=headers_test)
 
@@ -39,7 +39,7 @@ def obtener_y_refrescar_token(cuenta_clave):
         return access_token
 
     print(f"🔄 Token vencido para [{cuenta_clave}]. Renovando en Mercado Libre...")
-    url_oauth = "https://mercadolibre.com"
+    url_oauth = "https://api.mercadolibre.com/oauth/token"
     payload = {
         "grant_type": "refresh_token",
         "client_id": os.environ.get("ML_CLIENT_ID"),
@@ -65,7 +65,7 @@ def obtener_y_refrescar_token(cuenta_clave):
 def actualizar_stock_ml(item_id, nuevo_stock, access_token):
     if not item_id or str(item_id).strip().upper() == "N/A" or not str(item_id).startswith("MLA"):
         return
-    url = f"https://mercadolibre.com{item_id}"
+    url = f"https://api.mercadolibre.com/items/{item_id}"
     payload = {"available_quantity": int(nuevo_stock)}
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -127,7 +127,7 @@ def catch_all(path):
                     if not token_actual:
                         return jsonify({"error": f"No se pudo validar el token de {cuenta_origen}"}), 400
                     
-                    url_item = f"https://mercadolibre.com{item_id}"
+                    url_item = f"https://api.mercadolibre.com/items/{item_id}"
                     headers = {"Authorization": f"Bearer {token_actual}"}
                     resp_item = requests.get(url_item, headers=headers)
                     
