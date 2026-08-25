@@ -2,6 +2,7 @@ import os
 import json
 import requests
 from flask import Flask, request, jsonify
+
 # Usamos el cliente oficial de Upstash Redis que no pierde la conexión en Flask
 try:
     from upstash_redis import Redis
@@ -150,8 +151,20 @@ def catch_all(path):
                                         actualizar_stock_ml(id_destino, stock_real, token_destino)
                                     except Exception as e:
                                         print(f"⚠️ Error al actualizar {cuenta_destino}: {e}")
-                            
-        return jsonify({"status": "ok"}), 200
+                                        
+                        return jsonify({"status": "processed", "message": "Sincronización de stock realizada"}), 200
+                    else:
+                        print(f"⚠️ Error consultando item {item_id} en Mercado Libre. Status: {resp_item.status_code}")
+                        return jsonify({"error": "Error al consultar el item en la API de Mercado Libre"}), 502
+                else:
+                    print(f"⚠️ Item {item_id} encontrado en KV pero no mapea con una cuenta de origen válida.")
+                    return jsonify({"status": "ignored", "reason": "invalid_account_origin"}), 200
+            else:
+                print(f"ℹ️ Item {item_id} no registrado en el mapa de productos de tu Upstash KV.")
+                return jsonify({"status": "ignored", "reason": "item_not_mapped"}), 200
+        
+        # En caso de que Mercado Libre envíe notificaciones de otros tópicos (ej. 'questions', 'orders_v2')
+        return jsonify({"status": "ignored", "reason": "topic_not_supported"}), 200
 
     except Exception as e:
         print(f"❌ Error interno procesando el Webhook: {str(e)}")
