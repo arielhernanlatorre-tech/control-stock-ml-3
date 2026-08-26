@@ -6,7 +6,8 @@ from flask import Flask, request, jsonify
 # Usamos el cliente oficial de Upstash Redis que no pierde la conexión en Flask
 try:
     from upstash_redis import Redis
-    kv = Redis.from_env() # Toma automáticamente las claves de tu pestaña Storage
+    import os
+    kv = Redis(url=os.environ.get("KV_REST_API_URL"), token=os.environ.get("KV_REST_API_TOKEN")) # Toma automáticamente las claves de tu pestaña Storage
 except ImportError:
     kv = None
 
