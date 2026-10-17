@@ -1,4 +1,4 @@
-# VERCEL DEPLOYMENT BYPASS: UPDATE COMPLETE BLOCK FOR API ROUTING
+# VERCEL DEPLOYMENT BYPASS: SOLUCIÓN COMPLETA PARA ENTORNO Y VARIACIONES
 import os
 import json
 import requests
@@ -9,11 +9,11 @@ from upstash_redis import Redis
 
 app = Flask(__name__)
 
-# Configuración automática usando las variables nativas que ya te da Vercel
-UPSTASH_REDIS_REST_URL = os.environ.get("KV_REST_API_URL", "https://united-basilisk-148242.upstash.io")
-UPSTASH_REDIS_REST_TOKEN = os.environ.get("KV_REST_API_TOKEN", "")
+# CONFIGURACIÓN FORZADA: Forzamos tus datos reales anulando las variables internas de Vercel
+UPSTASH_REDIS_REST_URL = "https://united-basilisk-148242.upstash.io"
+UPSTASH_REDIS_REST_TOKEN = "gQAAAAAAAkMSAAIgcDE5ZGUxYTkzMzAwNzY0NDllYTk3YTNmMmI1NTc1MjMyYw"
 
-# Inicializamos el cliente de Redis
+# Inicializamos el cliente de Redis de forma directa
 redis = Redis(url=UPSTASH_REDIS_REST_URL, token=UPSTASH_REDIS_REST_TOKEN)
 
 def inicializar_google_sheets():
@@ -62,27 +62,49 @@ def obtener_tokens():
     return resultado_tokens
 
 def actualizar_stock_ml(item_id, nuevo_stock, access_token, nombre_cuenta=""):
-    """Envía la actualización de stock de forma segura a Mercado Libre."""
+    """Envía la actualización de stock controlando de forma inteligente las variaciones."""
     id_limpio = str(item_id).strip() if item_id else ""
     if not id_limpio or id_limpio.upper() == "N/A" or len(id_limpio) < 5 or not id_limpio.upper().startswith("MLA"):
         print(f"⏩ Saltando réplica para {nombre_cuenta}: ID inválido o vacío ('{item_id}')")
         return
 
     url_item = f"https://api.mercadolibre.com/items/{id_limpio}"
-    payload = {"available_quantity": int(nuevo_stock)}
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
     
     try:
-        respuesta = requests.put(url_item, json=payload, headers=headers)
-        if respuesta.status_code == 200 or respuesta.status_code == 201:
-            print(f"✅ ¡Éxito! Stock replicado en {nombre_cuenta} para el ítem {id_limpio}")
+        # Consultamos primero el ítem de destino para verificar variaciones físicas
+        resp_dest = requests.get(url_item, headers={"Authorization": f"Bearer {access_token}"})
+        
+        if resp_dest.status_code == 200:
+            json_dest = resp_dest.json()
+            variaciones = json_dest.get("variations", [])
+            
+            # Si el producto tiene variaciones, inyectamos la cantidad en cada una de ellas
+            if variaciones and len(variaciones) > 0:
+                lista_variaciones = []
+                for v in variaciones:
+                    lista_variaciones.append({
+                        "id": v.get("id"),
+                        "available_quantity": int(nuevo_stock)
+                    })
+                payload = {"variations": lista_variaciones}
+            else:
+                # Formato clásico para productos estándar
+                payload = {"available_quantity": int(nuevo_stock)}
+                
+            respuesta = requests.put(url_item, json=payload, headers=headers)
+            if respuesta.status_code == 200 or respuesta.status_code == 201:
+                print(f"✅ ¡Éxito! Stock replicado en {nombre_cuenta} para el ítem {id_limpio}")
+            else:
+                print(f"⚠️ {nombre_cuenta} rechazó actualización ({id_limpio}). Status: {respuesta.status_code}")
         else:
-            print(f"⚠️ Mercado Libre rechazó la actualización en {nombre_cuenta} ({id_limpio}). Status: {respuesta.status_code}")
+            print(f"❌ No se pudo consultar el ítem destino {id_limpio} en {nombre_cuenta}.")
+            
     except Exception as err:
-        print(f"❌ Fallo de red al intentar conectar con la API para {nombre_cuenta}: {err}")
+        print(f"❌ Fallo al conectar con la API para {nombre_cuenta}: {err}")
 
 @app.route('/', defaults={'path': ''}, methods=['POST', 'GET'])
 @app.route('/<path:path>', methods=['POST', 'GET'])
