@@ -9,7 +9,7 @@ from upstash_redis import Redis
 app = Flask(__name__)
 
 # Configuración automática usando las variables nativas que ya te da Vercel
-UPSTASH_REDIS_REST_URL = os.environ.get("KV_REST_API_URL", "https://united-basilisk-148242.upstash.io")
+UPSTASH_REDIS_REST_URL = os.environ.get("KV_REST_API_URL", "https://upstash.io")
 UPSTASH_REDIS_REST_TOKEN = os.environ.get("KV_REST_API_TOKEN", "")
 
 # Inicializamos el cliente de Redis
@@ -17,8 +17,8 @@ redis = Redis(url=UPSTASH_REDIS_REST_URL, token=UPSTASH_REDIS_REST_TOKEN)
 
 def inicializar_google_sheets():
     alcance = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
+        'https://googleapis.com',
+        'https://googleapis.com'
     ]
     
     if "CREDENTIALS_JSON" in os.environ:
@@ -62,14 +62,12 @@ def obtener_tokens():
 
 def actualizar_stock_ml(item_id, nuevo_stock, access_token, nombre_cuenta=""):
     """Envía la actualización de stock de forma segura a Mercado Libre."""
-    # VALIDACIÓN ROBUSTA: Si el ID está vacío, es menor a un código real MLA o no empieza con la firma, aborta de forma segura sin romper el webhook
     id_limpio = str(item_id).strip() if item_id else ""
     if not id_limpio or id_limpio.upper() == "N/A" or len(id_limpio) < 5 or not id_limpio.upper().startswith("MLA"):
         print(f"⏩ Saltando réplica para {nombre_cuenta}: ID inválido o vacío ('{item_id}')")
         return
 
-    url = f"https://mercadolibre.com" # Usando URL base de items
-    url_item = f"https://api.mercadolibre.com/items/{id_limpio}"
+    url_item = f"https://mercadolibre.com{id_limpio}"
     payload = {"available_quantity": int(nuevo_stock)}
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -81,7 +79,7 @@ def actualizar_stock_ml(item_id, nuevo_stock, access_token, nombre_cuenta=""):
         if respuesta.status_code in:
             print(f"✅ ¡Éxito! Stock replicado en {nombre_cuenta} para el ítem {id_limpio}")
         else:
-            print(f"⚠️ Mercado Libre rechazó la actualización en {nombre_cuenta} ({id_limpio}). Status: {respuesta.status_code}, Msg: {respuesta.text}")
+            print(f"⚠️ Mercado Libre rechazó la actualización en {nombre_cuenta} ({id_limpio}). Status: {respuesta.status_code}")
     except Exception as err:
         print(f"❌ Fallo de red al intentar conectar con la API para {nombre_cuenta}: {err}")
 
@@ -110,7 +108,7 @@ def catch_all(path):
                 fila_num = celda.row
                 fila_datos = hoja_stock.row_values(fila_num)
                 
-                # Extracción segura controlando que falten columnas físicas al final de la fila
+                # Extracción segura de columnas
                 id_a = fila_datos[2].strip() if len(fila_datos) > 2 else ""
                 id_b = fila_datos[3].strip() if len(fila_datos) > 3 else ""
                 id_c = fila_datos[4].strip() if len(fila_datos) > 4 else ""
@@ -130,24 +128,20 @@ def catch_all(path):
                         print(f"❌ No hay token disponible para la cuenta origen: {cuenta_origen}")
                         return jsonify({"status": "error_token_origen"}), 200
                         
-                    url_item = f"https://api.mercadolibre.com/items/{item_id}"
+                    url_item = f"https://mercadolibre.com{item_id}"
                     headers = {"Authorization": f"Bearer {token_actual}"}
                     resp_item = requests.get(url_item, headers=headers)
                     
                     if resp_item.status_code == 200:
                         stock_real = resp_item.json().get("available_quantity")
                         
-                        # 1. Actualizamos el Google Sheets en tiempo real
                         hoja_stock.update_cell(fila_num, 2, stock_real)
                         
-                        # 2. Guardamos el stock en Upstash Redis
                         try:
                             redis.set(f"stock_actual:{item_id}", stock_real)
-                            print(f"💾 Stock guardado en Redis para {item_id}: {stock_real}")
                         except Exception as redis_err:
                             print(f"⚠️ Error al guardar en Redis: {redis_err}")
                         
-                        # 3. Replicamos el stock cuidando de no romper el flujo completo por una cuenta vacía
                         if cuenta_origen != "cuenta_a":
                             actualizar_stock_ml(id_a, stock_real, tokens_finales["cuenta_a"]['access_token'], "Cuenta A")
                                 
@@ -161,5 +155,7 @@ def catch_all(path):
 
     except Exception as e:
         print(f"❌ Error crítico interno controlado: {str(e)}")
-        # Devolvemos 200 para evitar que Mercado Libre reasigne reintentos infinitos si la lógica falló por un dato externo
         return jsonify({"status": "error_interno_controlado", "detalle": str(e)}), 200
+
+# ASIGNACIÓN REQUERIDA POR VERCEL PARA CARPETAS /API
+handler = app
