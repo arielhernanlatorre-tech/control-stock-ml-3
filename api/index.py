@@ -38,11 +38,9 @@ def obtener_tokens():
     
     for cuenta in cuentas:
         try:
-            # Buscamos la clave exacta que genera tu script local (ej: tokens:cuenta_a)
             datos_raw = redis.get(f"tokens:{cuenta}")
             
             if datos_raw:
-                # Convertimos el string JSON guardado de vuelta a un diccionario de Python
                 if isinstance(datos_raw, str):
                     datos_json = json.loads(datos_raw)
                 else:
@@ -62,16 +60,30 @@ def obtener_tokens():
             
     return resultado_tokens
 
-def actualizar_stock_ml(item_id, nuevo_stock, access_token):
-    if not item_id or str(item_id).strip().upper() == "N/A" or not str(item_id).startswith("MLA"):
+def actualizar_stock_ml(item_id, nuevo_stock, access_token, nombre_cuenta=""):
+    """Envía la actualización de stock de forma segura a Mercado Libre."""
+    # VALIDACIÓN ROBUSTA: Si el ID está vacío, es menor a un código real MLA o no empieza con la firma, aborta de forma segura sin romper el webhook
+    id_limpio = str(item_id).strip() if item_id else ""
+    if not id_limpio or id_limpio.upper() == "N/A" or len(id_limpio) < 5 or not id_limpio.upper().startswith("MLA"):
+        print(f"⏩ Saltando réplica para {nombre_cuenta}: ID inválido o vacío ('{item_id}')")
         return
-    url = f"https://api.mercadolibre.com/items/{item_id}"
+
+    url = f"https://mercadolibre.com" # Usando URL base de items
+    url_item = f"https://api.mercadolibre.com/items/{id_limpio}"
     payload = {"available_quantity": int(nuevo_stock)}
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
-    requests.put(url, json=payload, headers=headers)
+    
+    try:
+        respuesta = requests.put(url_item, json=payload, headers=headers)
+        if respuesta.status_code in:
+            print(f"✅ ¡Éxito! Stock replicado en {nombre_cuenta} para el ítem {id_limpio}")
+        else:
+            print(f"⚠️ Mercado Libre rechazó la actualización en {nombre_cuenta} ({id_limpio}). Status: {respuesta.status_code}, Msg: {respuesta.text}")
+    except Exception as err:
+        print(f"❌ Fallo de red al intentar conectar con la API para {nombre_cuenta}: {err}")
 
 @app.route('/', defaults={'path': ''}, methods=['POST', 'GET'])
 @app.route('/<path:path>', methods=['POST', 'GET'])
@@ -98,10 +110,10 @@ def catch_all(path):
                 fila_num = celda.row
                 fila_datos = hoja_stock.row_values(fila_num)
                 
-                # Asignación segura de columnas según tu estructura
-                id_a = fila_datos[2] if len(fila_datos) > 2 else ""
-                id_b = fila_datos[3] if len(fila_datos) > 3 else ""
-                id_c = fila_datos[4] if len(fila_datos) > 4 else ""
+                # Extracción segura controlando que falten columnas físicas al final de la fila
+                id_a = fila_datos[2].strip() if len(fila_datos) > 2 else ""
+                id_b = fila_datos[3].strip() if len(fila_datos) > 3 else ""
+                id_c = fila_datos[4].strip() if len(fila_datos) > 4 else ""
                 
                 mapeo_cuentas = {"cuenta_a": id_a, "cuenta_b": id_b, "cuenta_c": id_c}
                 cuenta_origen = None
@@ -114,6 +126,10 @@ def catch_all(path):
                     tokens_finales = obtener_tokens()
                     token_actual = tokens_finales[cuenta_origen]['access_token']
                     
+                    if not token_actual:
+                        print(f"❌ No hay token disponible para la cuenta origen: {cuenta_origen}")
+                        return jsonify({"status": "error_token_origen"}), 200
+                        
                     url_item = f"https://api.mercadolibre.com/items/{item_id}"
                     headers = {"Authorization": f"Bearer {token_actual}"}
                     resp_item = requests.get(url_item, headers=headers)
@@ -121,37 +137,29 @@ def catch_all(path):
                     if resp_item.status_code == 200:
                         stock_real = resp_item.json().get("available_quantity")
                         
-                        # 1. Actualizamos el Google Sheets en tiempo real (Pestaña Stock)
+                        # 1. Actualizamos el Google Sheets en tiempo real
                         hoja_stock.update_cell(fila_num, 2, stock_real)
                         
-                        # 2. Guardamos el stock en Upstash Redis para que impacte en tu sistema
+                        # 2. Guardamos el stock en Upstash Redis
                         try:
                             redis.set(f"stock_actual:{item_id}", stock_real)
                             print(f"💾 Stock guardado en Redis para {item_id}: {stock_real}")
                         except Exception as redis_err:
                             print(f"⚠️ Error al guardar en Redis: {redis_err}")
                         
-                        # 3. Replicamos el stock de forma aislada a las cuentas espejo usando Vercel
+                        # 3. Replicamos el stock cuidando de no romper el flujo completo por una cuenta vacía
                         if cuenta_origen != "cuenta_a":
-                            try:
-                                actualizar_stock_ml(id_a, stock_real, tokens_finales["cuenta_a"]['access_token'])
-                            except Exception as e:
-                                print(f"⚠️ Error al actualizar Cuenta A: {e}")
+                            actualizar_stock_ml(id_a, stock_real, tokens_finales["cuenta_a"]['access_token'], "Cuenta A")
                                 
                         if cuenta_origen != "cuenta_b":
-                            try:
-                                actualizar_stock_ml(id_b, stock_real, tokens_finales["cuenta_b"]['access_token'])
-                            except Exception as e:
-                                print(f"⚠️ Error al actualizar Cuenta B: {e}")
+                            actualizar_stock_ml(id_b, stock_real, tokens_finales["cuenta_b"]['access_token'], "Cuenta B")
                                 
                         if cuenta_origen != "cuenta_c":
-                            try:
-                                actualizar_stock_ml(id_c, stock_real, tokens_finales["cuenta_c"]['access_token'])
-                            except Exception as e:
-                                print(f"⚠️ Error al actualizar Cuenta C: {e}")
+                            actualizar_stock_ml(id_c, stock_real, tokens_finales["cuenta_c"]['access_token'], "Cuenta C")
                             
         return jsonify({"status": "ok"}), 200
 
     except Exception as e:
-        print(f"❌ Error interno: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        print(f"❌ Error crítico interno controlado: {str(e)}")
+        # Devolvemos 200 para evitar que Mercado Libre reasigne reintentos infinitos si la lógica falló por un dato externo
+        return jsonify({"status": "error_interno_controlado", "detalle": str(e)}), 200
