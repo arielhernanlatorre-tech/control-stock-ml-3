@@ -18,8 +18,8 @@ redis = Redis(url=UPSTASH_REDIS_REST_URL, token=UPSTASH_REDIS_REST_TOKEN)
 
 def inicializar_google_sheets():
     alcance = [
-        'https://googleapis.com',
-        'https://googleapis.com'
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
     ]
     
     if "CREDENTIALS_JSON" in os.environ:
@@ -68,7 +68,7 @@ def actualizar_stock_ml(item_id, nuevo_stock, access_token, nombre_cuenta=""):
         print(f"⏩ Saltando réplica para {nombre_cuenta}: ID inválido o vacío ('{item_id}')")
         return
 
-    url_item = f"https://mercadolibre.com{id_limpio}"
+    url_item = f"https://api.mercadolibre.com/items/{id_limpio}"
     payload = {"available_quantity": int(nuevo_stock)}
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -129,7 +129,7 @@ def catch_all(path):
                         print(f"❌ No hay token disponible para la cuenta origen: {cuenta_origen}")
                         return jsonify({"status": "error_token_origen"}), 200
                         
-                    url_item = f"https://mercadolibre.com{item_id}"
+                    url_item = f"https://api.mercadolibre.com/items/{id_limpio}"
                     headers = {"Authorization": f"Bearer {token_actual}"}
                     resp_item = requests.get(url_item, headers=headers)
                     
