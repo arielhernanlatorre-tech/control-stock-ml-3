@@ -1,3 +1,4 @@
+# VERCEL DEPLOYMENT BYPASS: UPDATE COMPLETE BLOCK FOR API ROUTING
 import os
 import json
 import requests
@@ -76,7 +77,6 @@ def actualizar_stock_ml(item_id, nuevo_stock, access_token, nombre_cuenta=""):
     
     try:
         respuesta = requests.put(url_item, json=payload, headers=headers)
-        # CORREGIDO: Lógica de comparación directa para evitar errores de sintaxis
         if respuesta.status_code == 200 or respuesta.status_code == 201:
             print(f"✅ ¡Éxito! Stock replicado en {nombre_cuenta} para el ítem {id_limpio}")
         else:
@@ -109,10 +109,10 @@ def catch_all(path):
                 fila_num = celda.row
                 fila_datos = hoja_stock.row_values(fila_num)
                 
-                # Extracción segura de columnas de la fila
-                id_a = fila_datos[2].strip() if len(fila_datos) > 2 else ""
-                id_b = fila_datos[3].strip() if len(fila_datos) > 3 else ""
-                id_c = fila_datos[4].strip() if len(fila_datos) > 4 else ""
+                # Extracción segura de columnas
+                id_a = fila_datos[2] if len(fila_datos) > 2 else ""
+                id_b = fila_datos[3] if len(fila_datos) > 3 else ""
+                id_c = fila_datos[4] if len(fila_datos) > 4 else ""
                 
                 mapeo_cuentas = {"cuenta_a": id_a, "cuenta_b": id_b, "cuenta_c": id_c}
                 cuenta_origen = None
@@ -158,5 +158,6 @@ def catch_all(path):
         print(f"❌ Error crítico interno controlado: {str(e)}")
         return jsonify({"status": "error_interno_controlado", "detalle": str(e)}), 200
 
-# ASIGNACIÓN REQUERIDA POR VERCEL PARA CARPETAS /API
+# EXPORTACIONES REQUERIDAS POR VERCEL PARA EVITAR ERRORES TOP-LEVEL
+application = app
 handler = app
