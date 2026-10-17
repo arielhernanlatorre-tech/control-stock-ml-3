@@ -129,7 +129,7 @@ def catch_all(path):
                         print(f"❌ No hay token disponible para la cuenta origen: {cuenta_origen}")
                         return jsonify({"status": "error_token_origen"}), 200
                         
-                    url_item = f"https://api.mercadolibre.com/items/{id_limpio}"
+                    url_item = f"https://api.mercadolibre.com/items/{item_id}"
                     headers = {"Authorization": f"Bearer {token_actual}"}
                     resp_item = requests.get(url_item, headers=headers)
                     
