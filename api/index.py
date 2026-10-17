@@ -32,21 +32,35 @@ def inicializar_google_sheets():
     return cliente.open_by_key(os.environ.get("GOOGLE_SPREADSHEET_ID"))
 
 def obtener_tokens():
-    """Lee los tokens directamente desde las Variables de Entorno de Vercel."""
-    return {
-        "cuenta_a": {
-            "access_token": os.environ.get("TOKEN_CUENTA_A", ""),
-            "refresh_token": os.environ.get("REFRESH_CUENTA_A", "")
-        },
-        "cuenta_b": {
-            "access_token": os.environ.get("TOKEN_CUENTA_B", ""),
-            "refresh_token": os.environ.get("REFRESH_CUENTA_B", "")
-        },
-        "cuenta_c": {
-            "access_token": os.environ.get("TOKEN_CUENTA_C", ""),
-            "refresh_token": os.environ.get("REFRESH_CUENTA_C", "")
-        }
-    }
+    """Lee los tokens directamente desde Vercel KV en tiempo real."""
+    resultado_tokens = {}
+    cuentas = ["cuenta_a", "cuenta_b", "cuenta_c"]
+    
+    for cuenta in cuentas:
+        try:
+            # Buscamos la clave exacta que genera tu script local (ej: tokens:cuenta_a)
+            datos_raw = redis.get(f"tokens:{cuenta}")
+            
+            if datos_raw:
+                # Convertimos el string JSON guardado de vuelta a un diccionario de Python
+                if isinstance(datos_raw, str):
+                    datos_json = json.loads(datos_raw)
+                else:
+                    datos_json = datos_raw
+                
+                resultado_tokens[cuenta] = {
+                    "access_token": datos_json.get("access_token", ""),
+                    "refresh_token": datos_json.get("refresh_token", "")
+                }
+            else:
+                print(f"⚠️ Advertencia: No se encontraron tokens en KV para {cuenta}. Usando vacíos.")
+                resultado_tokens[cuenta] = {"access_token": "", "refresh_token": ""}
+                
+        except Exception as e:
+            print(f"❌ Error al leer tokens de Redis para {cuenta}: {e}")
+            resultado_tokens[cuenta] = {"access_token": "", "refresh_token": ""}
+            
+    return resultado_tokens
 
 def actualizar_stock_ml(item_id, nuevo_stock, access_token):
     if not item_id or str(item_id).strip().upper() == "N/A" or not str(item_id).startswith("MLA"):
@@ -110,7 +124,7 @@ def catch_all(path):
                         # 1. Actualizamos el Google Sheets en tiempo real (Pestaña Stock)
                         hoja_stock.update_cell(fila_num, 2, stock_real)
                         
-                        # [NUEVO] 2. Guardamos el stock en Upstash Redis para que impacte en tu sistema
+                        # 2. Guardamos el stock en Upstash Redis para que impacte en tu sistema
                         try:
                             redis.set(f"stock_actual:{item_id}", stock_real)
                             print(f"💾 Stock guardado en Redis para {item_id}: {stock_real}")
