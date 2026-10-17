@@ -76,8 +76,8 @@ def actualizar_stock_ml(item_id, nuevo_stock, access_token, nombre_cuenta=""):
     
     try:
         respuesta = requests.put(url_item, json=payload, headers=headers)
-        # CORREGIDO: Lista de estados válidos agregada correctamente
-        if respuesta.status_code in:
+        # CORREGIDO: Lógica de comparación directa para evitar errores de sintaxis
+        if respuesta.status_code == 200 or respuesta.status_code == 201:
             print(f"✅ ¡Éxito! Stock replicado en {nombre_cuenta} para el ítem {id_limpio}")
         else:
             print(f"⚠️ Mercado Libre rechazó la actualización en {nombre_cuenta} ({id_limpio}). Status: {respuesta.status_code}")
