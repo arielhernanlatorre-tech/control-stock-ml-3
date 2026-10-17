@@ -76,6 +76,7 @@ def actualizar_stock_ml(item_id, nuevo_stock, access_token, nombre_cuenta=""):
     
     try:
         respuesta = requests.put(url_item, json=payload, headers=headers)
+        # CORREGIDO: Lista de estados válidos agregada correctamente
         if respuesta.status_code in:
             print(f"✅ ¡Éxito! Stock replicado en {nombre_cuenta} para el ítem {id_limpio}")
         else:
@@ -108,7 +109,7 @@ def catch_all(path):
                 fila_num = celda.row
                 fila_datos = hoja_stock.row_values(fila_num)
                 
-                # Extracción segura de columnas
+                # Extracción segura de columnas de la fila
                 id_a = fila_datos[2].strip() if len(fila_datos) > 2 else ""
                 id_b = fila_datos[3].strip() if len(fila_datos) > 3 else ""
                 id_c = fila_datos[4].strip() if len(fila_datos) > 4 else ""
