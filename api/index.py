@@ -10,7 +10,7 @@ from upstash_redis import Redis
 app = Flask(__name__)
 
 # Configuración automática usando las variables nativas que ya te da Vercel
-UPSTASH_REDIS_REST_URL = os.environ.get("KV_REST_API_URL", "https://upstash.io")
+UPSTASH_REDIS_REST_URL = os.environ.get("KV_REST_API_URL", "https://united-basilisk-148242.upstash.io")
 UPSTASH_REDIS_REST_TOKEN = os.environ.get("KV_REST_API_TOKEN", "")
 
 # Inicializamos el cliente de Redis
